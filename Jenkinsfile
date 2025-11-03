@@ -5,9 +5,9 @@ pipeline {
     // กัน “เช็คเอาต์ซ้ำซ้อน”
     // ถ้า job เป็นแบบ Pipeline from SCM / Multibranch แนะนำเพิ่ม options { skipDefaultCheckout(true) }
     // เพื่อปิดการ checkout อัตโนมัติก่อนเข้า stages (เพราะเรามี checkout scm อยู่แล้ว)
-    // options {
-    //     skipDefaultCheckout(true)   // ถ้าเป็น Pipeline from SCM/Multi-branch
-    // }
+    options {
+        skipDefaultCheckout(true)   // ถ้าเป็น Pipeline from SCM/Multi-branch
+    }
 
     // กำหนด environment variables
     environment {
