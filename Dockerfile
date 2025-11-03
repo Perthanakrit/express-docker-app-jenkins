@@ -1,40 +1,33 @@
-# Build stage - สำหรับ development และ testing
-FROM node:22-alpine AS builder
+# เริ่มต้นจาก Image Jenkins ที่เราต้องการ
+FROM jenkins/jenkins:jdk21
 
-# กำหนด Working Directory ภายใน Container
-WORKDIR /app
+USER root
 
-# Copy ไฟล์ package.json และ package-lock.json เข้าไปก่อน
-# เพื่อใช้ประโยชน์จาก Docker cache layer ทำให้ไม่ต้อง install dependencies ใหม่ทุกครั้งที่แก้โค้ด
-COPY package*.json ./
+# Install Docker CLI and Node.js
+RUN apt-get update && \\
+    apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release && \\
+    curl -fsSL <https://download.docker.com/linux/debian/gpg> | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg && \\
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] <https://download.docker.com/linux/debian> $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \\
+    apt-get update && \\
+    apt-get install -y docker-ce-cli && \\
+    curl -fsSL <https://deb.nodesource.com/setup_22.x> | bash - && \\
+    apt-get install -y nodejs && \\
+    apt-get clean && \\
+    rm -rf /var/lib/apt/lists/*
 
-# ติดตั้ง Dependencies (รวม dev dependencies สำหรับ testing)
-RUN npm install
+# สร้าง entrypoint script เพื่อแก้สิทธิ์ docker socket ตอน runtime
+RUN echo '#!/bin/bash\\n\\
+    DOCKER_SOCK="/var/run/docker.sock"\\n\\
+    if [ -S "$DOCKER_SOCK" ]; then\\n\\
+    DOCKER_GID=$(stat -c "%g" $DOCKER_SOCK)\\n\\
+    if ! getent group $DOCKER_GID > /dev/null 2>&1; then\\n\\
+    groupadd -g $DOCKER_GID docker\\n\\
+    fi\\n\\
+    usermod -aG $DOCKER_GID jenkins\\n\\
+    fi\\n\\
+    exec /usr/bin/tini -- /usr/local/bin/jenkins.sh "$@"' > /usr/local/bin/entrypoint.sh && \\
+    chmod +x /usr/local/bin/entrypoint.sh
 
-# Copy โค้ดทั้งหมดในโปรเจกต์เข้าไปใน container
-COPY . .
+USER jenkins
 
-# Compile TypeScript เป็น JavaScript
-RUN npm run build
-
-# Production stage - สำหรับ production deployment
-FROM node:22-alpine AS production
-
-# กำหนด Working Directory ภายใน Container
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# ติดตั้งเฉพาะ production dependencies
-RUN npm ci --only=production && npm cache clean --force
-
-# Copy โค้ดที่ compiled แล้วจาก builder stage
-COPY --from=builder /app/dist ./dist
-# COPY --from=builder /app/src ./src
-
-# กำหนด Port ที่ Container จะทำงาน
-EXPOSE 3000
-
-# คำสั่งสำหรับรัน Express Application (ใช้ compiled JavaScript)
-CMD ["npm", "start"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
